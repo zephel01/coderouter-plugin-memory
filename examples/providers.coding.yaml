@@ -1,0 +1,48 @@
+# Coding agent 向け fallback chain — 軽量速攻 → 高品質 MoE → 万能の 3 段。
+#
+# シナリオ:
+#   - 普段は qwen2.5-coder:14b (9 GB) で速く返す
+#   - 落ちたら qwen3.6:35b-a3b-q4_K_M (23 GB MoE、3B active) に降格
+#   - それも駄目なら gemma4:31b (19 GB) で確実に応答
+#   - L1-L6 ガード + 回路ブレーカー + agentmemory が全段で効く
+#
+# 前提:
+#   - Ollama に上 3 モデルが pull 済み (`ollama pull <name>`)
+#   - agentmemory が `npx -y @agentmemory/agentmemory` で起動中
+
+providers:
+  - name: ollama-coder-fast
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen2.5-coder:14b           # 軽量、速い
+
+  - name: ollama-coder-quality
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen3.6:35b-a3b-q4_K_M      # 重いが質高い (MoE)
+
+  - name: ollama-general
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: gemma4:31b                  # 万能、最後の砦
+
+profiles:
+  - name: default
+    providers: [ollama-coder-fast, ollama-coder-quality, ollama-general]
+    # L4 drift detection を有効化 — 5 シグナル rolling window で品質劣化を検知
+    drift_detection: warn
+    # L5 backend health — 3 連続失敗で chain demote
+    backend_health_action: demote
+    backend_health_threshold: 3
+
+plugins:
+  enabled:
+    - memory
+  config:
+    memory:
+      backend: agentmemory
+      endpoint: http://localhost:3111
+      inject_token_budget: 2000
+      secret_env: AGENTMEMORY_SECRET
+      circuit_breaker_threshold: 5
+      circuit_breaker_cooldown_s: 60.0

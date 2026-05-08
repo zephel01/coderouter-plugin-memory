@@ -1,0 +1,48 @@
+# 長文対応 — リクエストの message 量で profile を自動切替。
+#
+# シナリオ:
+#   - 普段は qwen2.5-coder:14b (32K 程度の context)
+#   - 入力が長い場合 (32K char 超 ≒ 8K token 超) は qwen3.6:27b-32k に切替
+#   - auto_router の content_token_count_min matcher が判定
+#
+# 注意:
+#   - default_profile: auto を指定すると auto_router が起動
+#   - rule.match.content_token_count_min は char/4 ヒューリスティック
+#     (tiktoken 不採用で 5-deps 不変原則を維持)
+
+default_profile: auto    # auto_router を起動
+
+providers:
+  - name: ollama-coder
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen2.5-coder:14b
+
+  - name: ollama-longctx
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen3.6:27b-32k             # 32K context window
+
+profiles:
+  - name: coding
+    providers: [ollama-coder]
+  - name: longcontext
+    providers: [ollama-longctx]
+
+auto_router:
+  default_rule_profile: coding         # マッチしなければ coding
+  rules:
+    - profile: longcontext
+      match:
+        # 8K token 相当 = 32000 char (char/4 ヒューリスティック)
+        content_token_count_min: 8000
+
+plugins:
+  enabled:
+    - memory
+  config:
+    memory:
+      backend: agentmemory
+      endpoint: http://localhost:3111
+      inject_token_budget: 2000
+      secret_env: AGENTMEMORY_SECRET

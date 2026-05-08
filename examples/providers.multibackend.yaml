@@ -1,0 +1,53 @@
+# 複数 backend (Ollama + LM Studio) の冗長化構成。
+#
+# シナリオ:
+#   - Ollama (port 11434) と LM Studio (port 1234) を両方常駐
+#   - Ollama がメイン、LM Studio が backup
+#   - 一方が落ちても自動 fallback
+#
+# 前提:
+#   - Ollama 起動中 (`ollama serve` または systemd)
+#   - LM Studio Local Server 起動中 (UI から start、または `lms server start`)
+#   - 両方に同じ ~ 互換のモデルを load 済み
+#
+# Self-healing 有効化で UNHEALTHY → exclude → restart command で自動回復:
+
+providers:
+  - name: ollama-primary
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen3.6:35b-a3b-q4_K_M
+    # backend が落ちたら自動 restart (任意)
+    # restart_command: "ollama serve"
+
+  - name: lmstudio-backup
+    kind: anthropic                    # LM Studio 0.4.12+ は anthropic 互換
+    base_url: http://localhost:1234
+    model: qwen3.5-9b                  # LM Studio に load 済みのモデル
+
+  # 最後の手段としてクラウド (有効化は ALLOW_PAID 環境変数 or yaml)
+  # - name: anthropic-direct
+  #   kind: anthropic
+  #   base_url: https://api.anthropic.com
+  #   model: claude-3-5-sonnet-20241022
+  #   api_key_env: ANTHROPIC_API_KEY
+  #   paid: true
+
+profiles:
+  - name: default
+    providers: [ollama-primary, lmstudio-backup]
+    # Self-healing — UNHEALTHY → exclude + 復帰 probe
+    backend_health_action: exclude
+    backend_health_threshold: 3
+    recovery_probe_initial_s: 30
+    recovery_probe_max_s: 300
+
+plugins:
+  enabled:
+    - memory
+  config:
+    memory:
+      backend: agentmemory
+      endpoint: http://localhost:3111
+      inject_token_budget: 2000
+      secret_env: AGENTMEMORY_SECRET
