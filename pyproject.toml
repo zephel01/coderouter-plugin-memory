@@ -1,0 +1,143 @@
+[project]
+# Wire-level memory plugin for CodeRouter. Sits at the wire layer
+# (between agent and backend) and transparently injects memory context
+# into requests + records responses to a pluggable memory backend.
+#
+# 4 backends (chosen via providers.yaml):
+#   - builtin    : sqlite3 (stdlib only, minimal features)
+#   - agentmemory: HTTP client to a running agentmemory server
+#                  (R@5 95.2% on LongMemEval-S; recommended)
+#   - mem0       : mem0 SDK adapter (last; deps heavy)
+#   - null       : no-op (explicit disable / degrade pathway)
+#
+# Design doc: CodeRouter/docs/inside/v2.3-plugin-memory-plan.md
+name = "coderouter-plugin-memory"
+version = "0.3.0"
+description = "Wire-level memory plugin for CodeRouter — pluggable backends (builtin / agentmemory / mem0 / null)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "zephel01", email = "zephel01@gmail.com" }]
+keywords = ["coderouter", "plugin", "memory", "agentmemory", "llm", "claude-code", "agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+# ============================================================
+# Runtime dependencies — keep minimal.
+# httpx is the only required runtime dep (used by the
+# agentmemory backend). builtin / null backends use stdlib only.
+# coderouter-cli is a peer dep (Plugin SDK source) but we do NOT
+# pin it as a runtime requirement — users install it themselves.
+# That keeps `pip install coderouter-plugin-memory` from forcing a
+# CodeRouter version on the user when CodeRouter isn't even running.
+# ============================================================
+dependencies = [
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+# Optional mem0 backend. Pull only when the user opts in:
+#   pip install coderouter-plugin-memory[mem0]
+# Kept optional because mem0 carries a heavy dep tree (vector DB
+# clients) that the average user does not need.
+mem0 = [
+    "mem0ai>=0.1.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-httpx>=0.32.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "coderouter-cli>=2.3.0a0",
+]
+
+# ============================================================
+# Plugin discovery — entry points consumed by CodeRouter's loader.
+# `name = "memory"` is the slug users put in providers.yaml under
+# `plugins.enabled`. Both InputFilter (pre-request inject) and
+# Observer (post-response record) are registered under the same
+# name; the user enables one slug to activate both.
+# ============================================================
+[project.entry-points."coderouter.input_filter"]
+memory = "coderouter_plugin_memory:MemoryInjector"
+
+[project.entry-points."coderouter.observer"]
+memory = "coderouter_plugin_memory:MemoryRecorder"
+
+[project.urls]
+Homepage = "https://github.com/zephel01/coderouter-plugin-memory"
+Repository = "https://github.com/zephel01/coderouter-plugin-memory"
+Issues = "https://github.com/zephel01/coderouter-plugin-memory/issues"
+Changelog = "https://github.com/zephel01/coderouter-plugin-memory/blob/main/CHANGELOG.md"
+"Design Doc" = "https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["coderouter_plugin_memory"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "coderouter_plugin_memory",
+    "tests",
+    "examples",
+    "scripts",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+# ============================================================
+# Linting / formatting — match CodeRouter conventions
+# ============================================================
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",  # pycodestyle / pyflakes
+    "I",            # isort
+    "B",            # bugbear
+    "UP",           # pyupgrade
+    "SIM",          # simplify
+    "RUF",          # ruff-specific
+]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ============================================================
+# Type checking — match CodeRouter (strict)
+# ============================================================
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+
+# ============================================================
+# Testing
+# ============================================================
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"

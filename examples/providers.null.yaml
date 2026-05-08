@@ -1,0 +1,32 @@
+# Disable memory explicitly — useful in CI / production-staging
+# environments where you want the plugin loaded (so it shows up in
+# `coderouter doctor` etc.) but no actual memory persistence.
+#
+# When to pick this over deleting `plugins.enabled: [memory]`:
+#   - You manage one providers.yaml across multiple environments and
+#     want a single boolean-ish toggle.
+#   - You're debugging routing and want to rule out memory injection
+#     as a contributing factor without rewiring config.
+#
+# What it does:
+#   - Loads the plugin (visible in startup logs as "plugin-loaded")
+#   - smart_search always returns ""
+#   - observe always succeeds with no side effect
+#   - Zero disk writes, zero HTTP calls
+
+providers:
+  - name: ollama-local
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen3.6:35b-a3b
+
+profiles:
+  - name: default
+    providers: [ollama-local]
+
+plugins:
+  enabled:
+    - memory
+  config:
+    memory:
+      backend: null   # the literal string "null"

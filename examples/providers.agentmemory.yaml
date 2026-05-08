@@ -1,0 +1,47 @@
+# Recommended config — agentmemory backend.
+#
+# Prerequisites:
+#   1. Run agentmemory in a separate terminal:
+#      $ npx -y @agentmemory/agentmemory
+#      (listens on http://localhost:3111 by default)
+#   2. Optionally export AGENTMEMORY_SECRET if you started agentmemory
+#      with auth enabled.
+#
+# What this gives you:
+#   - Hybrid BM25 + vector + graph search (R@5 95.2% on LongMemEval-S)
+#   - 4-tier memory consolidation (Working / Episodic / Semantic / Procedural)
+#   - Real-time viewer at http://localhost:3113 — watch the memory build
+#
+# Trade-off:
+#   - Needs another process running (Node + native iii-engine binary)
+#   - First-time setup takes a minute longer than builtin
+
+providers:
+  - name: ollama-local
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen3.6:35b-a3b
+
+profiles:
+  - name: default
+    providers: [ollama-local]
+
+plugins:
+  enabled:
+    - memory
+  config:
+    memory:
+      backend: agentmemory
+      endpoint: http://localhost:3111
+      inject_token_budget: 2000
+      secret_env: AGENTMEMORY_SECRET   # auth header from env (optional)
+
+      # Circuit breaker — if agentmemory is down, skip after 5
+      # consecutive failures and probe again after 60s. Prevents
+      # 5s HTTP timeouts from stacking on every request.
+      circuit_breaker_threshold: 5
+      circuit_breaker_cooldown_s: 60.0
+
+      # Server-side cap on rows returned per search.  inject_token_budget
+      # above is the wire-side cap; this one keeps the response small.
+      search_limit: 20

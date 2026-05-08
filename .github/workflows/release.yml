@@ -1,0 +1,175 @@
+name: Release to PyPI
+
+# Tag-driven publish to PyPI via Trusted Publishing (OIDC).
+#
+# Trigger: push of a `v*` tag (e.g. `v0.3.0`, `v0.3.1`).
+# Output:  sdist + wheel uploaded to https://pypi.org/project/coderouter-plugin-memory/
+#          and a GitHub Release draft (manual review before announce).
+#
+# Trusted Publishing setup (one-time, before the first release):
+#   1. Visit https://pypi.org/manage/account/publishing/  while logged in
+#      to your PyPI account.
+#   2. Click "Add a new pending publisher" (since the project doesn't yet
+#      exist on PyPI). Fill in:
+#        PyPI Project Name:   coderouter-plugin-memory
+#        Owner:               zephel01
+#        Repository name:     coderouter-plugin-memory
+#        Workflow name:       release.yml
+#        Environment name:    pypi          (← required, see ``environment:`` below)
+#   3. (Optional) Add a second pending publisher for TestPyPI at
+#      https://test.pypi.org/manage/account/publishing/  with environment
+#      ``testpypi`` so dry-run uploads also work.
+#
+# After setup, no API token is stored anywhere — GitHub mints a short-lived
+# OIDC credential per run, exchanged with PyPI for an upload token. This is
+# strictly safer than long-lived API tokens in repo secrets.
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual escape hatch: re-run after a botched tag push, or after
+  # release.yml itself has been edited and you want to re-publish an
+  # existing tag from the GitHub UI's "Run workflow" button.
+  #
+  # When triggered manually, ``github.ref_name`` becomes a branch name
+  # (e.g. "main") rather than a tag, so the github-release job will
+  # draft against that branch — fix the release name + tag manually
+  # after the fact. PyPI publish itself is fine because the version
+  # is read from pyproject.toml, not from the ref.
+  workflow_dispatch:
+
+# Default to read-only; the publish job opts into id-token write.
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1. Build & verify
+  # ------------------------------------------------------------------
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so version inference works
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Build sdist + wheel
+        run: uv build --out-dir dist/
+
+      - name: Verify the build
+        run: |
+          ls -la dist/
+          # Sanity: ensure both artifacts produced.
+          test -f dist/*.tar.gz || (echo "::error::sdist missing" && exit 1)
+          test -f dist/*.whl    || (echo "::error::wheel missing" && exit 1)
+          # Sanity: ensure no .venv contamination snuck in.
+          if tar -tzf dist/*.tar.gz | grep -qE '\.venv|__pycache__'; then
+            echo "::error::sdist contains .venv or __pycache__ — fix tool.hatch.build.targets.sdist.only-include in pyproject.toml"
+            tar -tzf dist/*.tar.gz | grep -E '\.venv|__pycache__' | head
+            exit 1
+          fi
+          # Sanity: entry points must be in the wheel — without them the
+          # plugin loader can't discover this package.
+          if ! unzip -p dist/*.whl '*entry_points.txt' | grep -q "memory ="; then
+            echo "::error::wheel missing entry_points.txt — check [project.entry-points] in pyproject.toml"
+            exit 1
+          fi
+
+      - name: Run tests against the built wheel
+        run: |
+          uv venv --python 3.12 /tmp/wheel-test
+          uv pip install --python /tmp/wheel-test/bin/python dist/*.whl
+          uv pip install --python /tmp/wheel-test/bin/python pytest pytest-asyncio pytest-httpx
+          /tmp/wheel-test/bin/python -m pytest -q
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # ------------------------------------------------------------------
+  # 2. Publish to PyPI
+  # ------------------------------------------------------------------
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/coderouter-plugin-memory
+    permissions:
+      id-token: write  # required for Trusted Publishing OIDC token
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish via Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          # Default skip-existing: false — duplicate uploads error out
+          # so a clean retry requires bumping the version explicitly.
+          skip-existing: false
+
+  # ------------------------------------------------------------------
+  # 3. Draft a GitHub Release with the artifacts attached
+  # ------------------------------------------------------------------
+  github-release:
+    name: Draft GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # creating releases
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          # Parse the section for this version out of CHANGELOG.md.
+          # Tag is GITHUB_REF_NAME (e.g. "v0.3.0"); strip leading "v"
+          # to match `## [0.3.0]` in the file.
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 ~ "^## \\["ver"\\]" { in_section = 1; print; next }
+            in_section && /^## \[/ { exit }
+            in_section { print }
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "Release ${GITHUB_REF_NAME}." > release_notes.md
+            echo "" >> release_notes.md
+            echo "Full notes: see [CHANGELOG.md](CHANGELOG.md)." >> release_notes.md
+          fi
+          echo "wrote $(wc -l < release_notes.md) lines"
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Draft = true so you review the release on GitHub before
+          # publishing it.
+          draft: true
+          name: "${{ github.ref_name }}"
+          tag_name: "${{ github.ref_name }}"
+          body_path: release_notes.md
+          files: |
+            dist/*.tar.gz
+            dist/*.whl

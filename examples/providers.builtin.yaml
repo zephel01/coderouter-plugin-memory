@@ -1,0 +1,36 @@
+# Minimal config — builtin sqlite3 backend.
+#
+# What this gives you:
+#   - sqlite3 file at ~/.coderouter/memory.sqlite3 (auto-created)
+#   - keyword LIKE search, recency-ordered
+#   - zero extra services — works offline
+#
+# When to pick this over agentmemory:
+#   - You don't want to run another process.
+#   - You're trying the plugin out before committing to agentmemory.
+#   - Very small memory footprint (one Python process, no Node, no
+#     iii-engine binary).
+#
+# Trade-off:
+#   - LIKE matches the longest word in the user's message; doesn't
+#     handle synonyms / different wordings. agentmemory's R@5 is
+#     95.2% — builtin is much lower for the same workload.
+
+providers:
+  - name: ollama-local
+    kind: anthropic
+    base_url: http://localhost:11434
+    model: qwen3.6:35b-a3b
+
+profiles:
+  - name: default
+    providers: [ollama-local]
+
+plugins:
+  enabled:
+    - memory   # entry-point name, NOT the package name
+  config:
+    memory:
+      backend: builtin
+      inject_token_budget: 2000
+      # store: ~/my-project/.memory.sqlite3   # optional override

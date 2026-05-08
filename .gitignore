@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+
+# Build artifacts
+build/
+dist/
+*.whl
+
+# Virtualenvs
+.venv/
+.venv-*/
+venv/
+env/
+
+# Tooling cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# uv
+uv.lock
+
+# scratch
+scratch/
+*.scratch
+.local/
+
+# Plugin runtime artefacts (user-space, never committed)
+*.sqlite3
+*.db
+.coderouter-memory/

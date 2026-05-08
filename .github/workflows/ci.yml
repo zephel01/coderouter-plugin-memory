@@ -1,0 +1,46 @@
+name: CI
+
+# Mirrors CodeRouter's CI: ruff check + pytest under uv.
+#
+# We run on push to main and on every PR. The matrix is intentionally
+# narrow (one Python, the project's pinned ``requires-python``) — the
+# wheel-install job in release.yml exercises the *built* artifact,
+# which is the more interesting compatibility target.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: ruff + pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dev deps
+        # ``--extra dev`` pulls in ruff, mypy, pytest, pytest-asyncio,
+        # pytest-httpx, and pins coderouter-cli >= 2.3.0a0 so the
+        # Plugin SDK Protocols are available for any optional
+        # integration check.
+        run: uv sync --extra dev
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: pytest
+        run: uv run pytest -q
