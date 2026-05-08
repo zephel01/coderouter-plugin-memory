@@ -6,6 +6,56 @@ versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [0.3.1] — 2026-05-08 (P0 smoke fix — switch agentmemory observe to /remember)
+
+Patch over `0.3.0`. P0 (live-endpoint smoke verification) ran against a
+real agentmemory server and surfaced the real wire shape — `/observe`
+isn't the right endpoint for a wire-level plugin.
+
+### Fixed
+
+- **`agentmemory observe returned status 400`** at runtime. agentmemory's
+  REST surface ships TWO write endpoints with different audiences:
+
+  | Endpoint | Required fields | Designed for |
+  |---|---|---|
+  | `/agentmemory/observe`  | `hookType`, `sessionId`, `project`, `cwd`, `timestamp` | Claude Code hook pipeline (full hook context) |
+  | `/agentmemory/remember` | `content` (string)                         | Anything else — generic free-text memory |
+
+  v0.3.0's plugin posted to `/observe` with a `tool_name` + `input` +
+  `output` shape, which agentmemory rejected with
+  `{"error":"hookType, sessionId, project, cwd, and timestamp are required strings"}`.
+
+  Fix: switch to `/agentmemory/remember`, serialize the request /
+  response pair into a single text blob tagged with `[project=...]`
+  so agentmemory's hybrid search picks it up. The structured
+  `project_id` is also passed in the body for forward compatibility
+  (agentmemory ignores unknown keys today).
+
+  Side effect: agentmemory now responds with `201 Created` (not 200);
+  the success-status check uses the `200-299` range so this works
+  without further changes.
+
+### Changed
+
+- `coderouter_plugin_memory/backends/agentmemory.py::observe()` now
+  posts to `/agentmemory/remember` with `{"content": "...", "project_id": "..."}`.
+- Module docstring documents the `/observe` vs `/remember` distinction
+  and the rationale for picking the latter at the wire layer.
+
+### Tests
+
+- `tests/test_backend_agentmemory.py::TestObserve::test_request_shape`
+  rewritten to assert the `/remember` URL + content-string body shape.
+  Other tests unaffected.
+
+### Migration
+
+`pip install -U coderouter-plugin-memory` (or `--pre` if alphas) — no
+config changes required. `providers.yaml` stays the same.
+
+---
+
 ## [0.3.0] — 2026-05-08 (initial public release)
 
 First public release. All four implementation phases (P1–P4 in the

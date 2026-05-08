@@ -10,8 +10,25 @@ Public-facing endpoints used (all under ``base_url + /agentmemory/``):
 
 - ``GET  /health``         — liveness probe (always public, no auth).
 - ``POST /smart-search``   — hybrid search; consumed by ``smart_search()``.
-- ``POST /observe``        — record a request/response pair as a single
-                             observation; consumed by ``observe()``.
+- ``POST /remember``       — store a free-text memory blob; consumed by
+                             ``observe()``.
+
+Why ``/remember`` rather than ``/observe`` (P0 finding, 2026-05-08)
+=================================================================
+
+agentmemory ships TWO write endpoints with different audiences:
+
+- ``/observe`` requires ``hookType``, ``sessionId``, ``project``, ``cwd``,
+  ``timestamp`` — i.e. a full Claude Code hook context. It's designed
+  for the ``claude-code`` hook pipeline that tags every tool invocation.
+- ``/remember`` accepts a single ``content`` string and is the natural
+  fit for any caller that doesn't have hook-grade context.
+
+CodeRouter sits at the wire layer between agent and LLM backend; we
+don't have ``hookType`` semantics or a ``cwd`` that necessarily matches
+the agent's idea of "current project". So we serialize the request /
+response pair into a tagged text blob and POST it to ``/remember``.
+agentmemory's hybrid search picks it up just like a hook-fed memory.
 
 Authentication
 ==============
@@ -224,34 +241,49 @@ class AgentMemoryBackend(MemoryBackend):
         request: dict[str, Any],
         response: dict[str, Any],
     ) -> None:
-        """POST /agentmemory/observe. Best-effort record of one request.
+        """POST /agentmemory/remember. Best-effort record of one request.
 
-        The body is shaped to look like a single hook event so
-        agentmemory's pipeline (dedup → privacy filter → compress →
-        index) treats it the same as a hook-fed observation.
+        We collapse the request / response pair into a single text
+        blob tagged with ``project_id`` so agentmemory's hybrid search
+        can find it later. ``project_id`` is included in the body
+        too in case agentmemory's future versions key on a structured
+        field; current versions ignore unknown keys.
         """
-        body = {
+        request_summary = _summarize_request(request)
+        response_summary = _summarize_response(response)
+
+        # Shape the content as a recognizable session block. Including
+        # the project_id in the text lets the BM25 side of agentmemory's
+        # hybrid search match on it even when there's no structured
+        # project filter on the search call.
+        content = (
+            f"[project={project_id}]\n"
+            f"user: {request_summary.get('last_user_message', '')}\n"
+            f"assistant: {response_summary.get('text', '')}"
+        )
+
+        body: dict[str, Any] = {
+            "content": content,
+            # Carry the structured project_id too; agentmemory ignores
+            # unknown keys today but may key on it in future versions.
             "project_id": project_id,
-            "tool_name": "coderouter_request",
-            "input": _summarize_request(request),
-            "output": _summarize_response(response),
         }
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout_s) as client:
                 resp = await client.post(
-                    self._url("/agentmemory/observe"),
+                    self._url("/agentmemory/remember"),
                     json=body,
                     headers=self._auth_headers(),
                 )
         except httpx.HTTPError as exc:
             raise MemoryBackendError(
-                f"agentmemory observe transport error: {exc}"
+                f"agentmemory remember transport error: {exc}"
             ) from exc
 
         if not (200 <= resp.status_code < 300):
             raise MemoryBackendError(
-                f"agentmemory observe returned status "
+                f"agentmemory remember returned status "
                 f"{resp.status_code}: {resp.text[:200]}"
             )
 

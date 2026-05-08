@@ -12,7 +12,7 @@
 #
 # Design doc: CodeRouter/docs/inside/v2.3-plugin-memory-plan.md
 name = "coderouter-plugin-memory"
-version = "0.3.0"
+version = "0.3.1"
 description = "Wire-level memory plugin for CodeRouter — pluggable backends (builtin / agentmemory / mem0 / null)."
 readme = "README.md"
 requires-python = ">=3.12"

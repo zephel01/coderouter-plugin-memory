@@ -321,9 +321,17 @@ class TestSmartSearch:
 
 
 class TestObserve:
+    """``observe()`` posts to ``/agentmemory/remember`` (the simple
+    text-store endpoint), NOT to ``/observe`` (which requires Claude
+    Code hook context: hookType / sessionId / project / cwd / timestamp).
+    See P0 smoke results 2026-05-08 in CHANGELOG."""
+
     def test_request_shape(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("AGENTMEMORY_SECRET", raising=False)
-        client = _FakeAsyncClient([_fake_response(status=200, body={})])
+        # /remember returns 201 Created (NOT 200) on success.
+        client = _FakeAsyncClient(
+            [_fake_response(status=201, body={"success": True, "memory": {"id": "mem_x"}})]
+        )
         b = AgentMemoryBackend()
         request = {
             "messages": [
@@ -347,22 +355,15 @@ class TestObserve:
 
         assert len(client.posts) == 1
         post = client.posts[0]
-        assert post["url"] == "http://localhost:3111/agentmemory/observe"
+        # /remember endpoint, not /observe.
+        assert post["url"] == "http://localhost:3111/agentmemory/remember"
         body = post["json"]
+        # /remember requires `content` (string) only; we tag with project_id.
         assert body["project_id"] == "proj-z"
-        assert body["tool_name"] == "coderouter_request"
-        assert body["input"] == {
-            "last_user_message": "the actual question",
-            "had_tools": True,
-            "stream": False,
-        }
-        assert body["output"] == {
-            "text": "answer",
-            "model": "claude-3-5-sonnet",
-            "stop_reason": "end_turn",
-            "input_tokens": 10,
-            "output_tokens": 4,
-        }
+        assert isinstance(body["content"], str)
+        assert "[project=proj-z]" in body["content"]
+        assert "the actual question" in body["content"]
+        assert "answer" in body["content"]
         # No auth env → no header.
         assert post["headers"] == {}
 
