@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/zephel01/coderouter-plugin-memory/actions/workflows/ci.yml"><img src="https://github.com/zephel01/coderouter-plugin-memory/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://pypi.org/project/coderouter-plugin-memory/"><img src="https://img.shields.io/pypi/v/coderouter-plugin-memory?color=blue" alt="version"></a>
+  <a href="https://pypi.org/project/coderouter-plugin-memory/"><img src="https://img.shields.io/pypi/v/coderouter-plugin-memory?include_prereleases&color=blue&label=pypi" alt="pypi"></a>
   <a href=""><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="python"></a>
   <a href=""><img src="https://img.shields.io/badge/runtime%20deps-1-brightgreen" alt="deps"></a>
   <a href=""><img src="https://img.shields.io/badge/license-MIT-yellow" alt="license"></a>
@@ -16,7 +16,7 @@
   <strong>日本語</strong> · <a href="./README.en.md">English</a> · <a href="https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md">設計ドキュメント</a> · <a href="https://github.com/zephel01/CodeRouter">CodeRouter 本体</a>
 </p>
 
-> **現在の状態 (v0.3.0)**: 4 backend (`builtin` / `agentmemory` / `null` / 計画中の `mem0`) と回路ブレーカー、112 unit tests を含む初版を PyPI に公開済み。CodeRouter `v2.3.0a1+` の Plugin SDK と組み合わせて動作。詳細は [CHANGELOG](./CHANGELOG.md) と[設計ドキュメント](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md)。
+> **状態**: 3 backend (`builtin` / `agentmemory` / `null` / 計画中の `mem0`) と回路ブレーカー、112 unit tests。**実 agentmemory サーバーで round-trip 動作確認済み** (`/agentmemory/remember` → memory_id 発行 → `/agentmemory/smart-search` でヒット)。CodeRouter `v2.3.0a1+` の Plugin SDK と組み合わせて動作。最新版の詳細は上の `pypi` バッジ + [CHANGELOG](./CHANGELOG.md) を参照。設計の経緯は[設計ドキュメント](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md)に。
 
 ---
 
@@ -111,16 +111,16 @@ coderouter serve --port 8088
 
 ---
 
-## バックエンド一覧 (`v0.3.0` で利用可能)
+## バックエンド一覧
 
-| Backend       | 状態         | こういう人向け                                                                          |
-|---------------|------------|-----------------------------------------------------------------------------------|
-| `builtin`     | ✅ v0.3.0   | 余計なサービスを増やしたくない。sqlite3 + LIKE 検索の最小機能。お試しに。                         |
-| `agentmemory` | ✅ v0.3.0   | **推奨**。LongMemEval-S R@5 95.2%、4 層 consolidation、token 92% 削減 (公称)。`npx` で起動。 |
-| `null`        | ✅ v0.3.0   | 明示的に memory を切る、または backend が落ちたときの自動 fallback 先。                          |
-| `mem0`        | ⏳ 計画中     | すでに [mem0](https://github.com/mem0ai/mem0) を使っているユーザー (要望ベースで実装)。               |
+| Backend       | 状態        | こういう人向け                                                                          |
+|---------------|-----------|-----------------------------------------------------------------------------------|
+| `builtin`     | ✅ shipped | 余計なサービスを増やしたくない。sqlite3 + LIKE 検索の最小機能。お試しに。                         |
+| `agentmemory` | ✅ shipped | **推奨**。LongMemEval-S R@5 95.2%、4 層 consolidation、token 92% 削減 (公称)。`npx` で起動。 |
+| `null`        | ✅ shipped | 明示的に memory を切る、または backend が落ちたときの自動 fallback 先。                          |
+| `mem0`        | ⏳ planned | すでに [mem0](https://github.com/mem0ai/mem0) を使っているユーザー (要望ベースで実装)。               |
 
-すべての backend は同じ `MemoryBackend` プロトコルを実装するので、`providers.yaml` の `backend:` を書き換えるだけで切り替えられます。
+すべての backend は同じ `MemoryBackend` プロトコルを実装するので、`providers.yaml` の `backend:` を書き換えるだけで切り替えられます。各リリースで何が landed / shipped したかは [CHANGELOG](./CHANGELOG.md) を参照。
 
 ---
 
@@ -128,11 +128,11 @@ coderouter serve --port 8088
 
 | Phase | 内容                                                  | 状態     |
 |-------|-----------------------------------------------------|--------|
-| P1    | CodeRouter 本体に Plugin SDK 追加 (`coderouter.plugins`)   | ✅ [CodeRouter v2.3.0a1+](https://pypi.org/project/coderouter-cli/) |
-| P2    | builtin sqlite3 backend / project_id / Inject / Record + tests | ✅ v0.3.0 |
-| P3    | agentmemory backend + integration tests + smoke script  | ✅ v0.3.0 |
-| P4    | 回路ブレーカー (連続失敗で degrade) + 自作 agent walkthrough + examples  | ✅ v0.3.0 |
-| P0    | agentmemory 実 endpoint smoke 検証 (`scripts/smoke_agentmemory.sh`) | ⏳ ローカルで手動実施 |
+| P1    | CodeRouter 本体に Plugin SDK 追加 (`coderouter.plugins`)   | ✅ shipped ([coderouter-cli](https://pypi.org/project/coderouter-cli/)) |
+| P2    | builtin sqlite3 backend / project_id / Inject / Record + tests | ✅ shipped |
+| P3    | agentmemory backend + integration tests + smoke script  | ✅ shipped |
+| P4    | 回路ブレーカー (連続失敗で degrade) + 自作 agent walkthrough + examples  | ✅ shipped |
+| P0    | agentmemory 実 endpoint smoke 検証 (`scripts/smoke_agentmemory.sh`) | ✅ shipped (`/observe` → `/remember` 切替) |
 | P5    | mem0 backend                       | ⏳ 要望ベース |
 
 詳細な実装計画: [`v2.3-plugin-memory-plan.md`](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md)

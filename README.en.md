@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/zephel01/coderouter-plugin-memory/actions/workflows/ci.yml"><img src="https://github.com/zephel01/coderouter-plugin-memory/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://pypi.org/project/coderouter-plugin-memory/"><img src="https://img.shields.io/pypi/v/coderouter-plugin-memory?color=blue" alt="version"></a>
+  <a href="https://pypi.org/project/coderouter-plugin-memory/"><img src="https://img.shields.io/pypi/v/coderouter-plugin-memory?include_prereleases&color=blue&label=pypi" alt="pypi"></a>
   <a href=""><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="python"></a>
   <a href=""><img src="https://img.shields.io/badge/runtime%20deps-1-brightgreen" alt="deps"></a>
   <a href=""><img src="https://img.shields.io/badge/license-MIT-yellow" alt="license"></a>
@@ -16,7 +16,7 @@
   <a href="./README.md">日本語</a> · <strong>English</strong> · <a href="https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md">Design doc</a> · <a href="https://github.com/zephel01/CodeRouter">CodeRouter</a>
 </p>
 
-> **Status (v0.3.0).** Initial release on PyPI: four backends (`builtin` / `agentmemory` / `null` / planned `mem0`), circuit breaker, 112 unit tests. Pairs with the Plugin SDK shipped in CodeRouter `v2.3.0a1+`. See [CHANGELOG](./CHANGELOG.md) and the [design doc](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md).
+> **Status.** Three backends (`builtin` / `agentmemory` / `null` / planned `mem0`), circuit breaker, 112 unit tests. **Live round-trip verified against an agentmemory server** (`/agentmemory/remember` → memory_id issued → `/agentmemory/smart-search` returns hit). Pairs with the Plugin SDK shipped in CodeRouter `v2.3.0a1+`. The current released version is shown by the `pypi` badge above; per-release notes live in [CHANGELOG](./CHANGELOG.md). The design rationale is in the [design doc](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md).
 
 ---
 
@@ -109,16 +109,16 @@ That's it. Point your agent at CodeRouter and the previous session's context is 
 
 ---
 
-## Backends (available in `v0.3.0`)
+## Backends
 
 | Backend       | Status     | When to pick this                                                                            |
 |---------------|------------|---------------------------------------------------------------------------------------------|
-| `builtin`     | ✅ v0.3.0  | You don't want extra services running. sqlite3 + LIKE search, minimum viable.                |
-| `agentmemory` | ✅ v0.3.0  | **Recommended.** R@5 95.2% on LongMemEval-S, 4-tier consolidation, 92% token reduction. `npx`-launched. |
-| `null`        | ✅ v0.3.0  | Explicit disable, or auto-fallback when the chosen backend is unhealthy.                     |
+| `builtin`     | ✅ shipped | You don't want extra services running. sqlite3 + LIKE search, minimum viable.                |
+| `agentmemory` | ✅ shipped | **Recommended.** R@5 95.2% on LongMemEval-S, 4-tier consolidation, 92% token reduction. `npx`-launched. |
+| `null`        | ✅ shipped | Explicit disable, or auto-fallback when the chosen backend is unhealthy.                     |
 | `mem0`        | ⏳ Planned | You're already invested in [mem0](https://github.com/mem0ai/mem0) (demand-driven).            |
 
-All backends implement the same `MemoryBackend` Protocol, so switching is just a string change in `providers.yaml`.
+All backends implement the same `MemoryBackend` Protocol, so switching is just a string change in `providers.yaml`. Per-release notes live in [CHANGELOG](./CHANGELOG.md).
 
 ---
 
@@ -126,11 +126,11 @@ All backends implement the same `MemoryBackend` Protocol, so switching is just a
 
 | Phase | What                                                                  | Status |
 |-------|-----------------------------------------------------------------------|--------|
-| P1    | Plugin SDK in CodeRouter Core (`coderouter.plugins`)                  | ✅ [CodeRouter v2.3.0a1+](https://pypi.org/project/coderouter-cli/) |
-| P2    | builtin sqlite3 backend / project_id / Inject / Record + tests        | ✅ v0.3.0 |
-| P3    | agentmemory backend + integration tests + smoke script                | ✅ v0.3.0 |
-| P4    | circuit breaker (degrade on consecutive failures) + walkthrough + examples | ✅ v0.3.0 |
-| P0    | agentmemory live-endpoint smoke (`scripts/smoke_agentmemory.sh`)       | ⏳ run locally |
+| P1    | Plugin SDK in CodeRouter Core (`coderouter.plugins`)                  | ✅ shipped ([coderouter-cli](https://pypi.org/project/coderouter-cli/)) |
+| P2    | builtin sqlite3 backend / project_id / Inject / Record + tests        | ✅ shipped |
+| P3    | agentmemory backend + integration tests + smoke script                | ✅ shipped |
+| P4    | circuit breaker (degrade on consecutive failures) + walkthrough + examples | ✅ shipped |
+| P0    | agentmemory live-endpoint smoke (`scripts/smoke_agentmemory.sh`)       | ✅ shipped (switched `/observe` → `/remember`) |
 | P5    | mem0 backend                                                          | ⏳ demand-driven |
 
 Detailed implementation plan: [`v2.3-plugin-memory-plan.md`](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md)

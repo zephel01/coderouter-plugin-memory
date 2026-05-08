@@ -6,8 +6,15 @@
 # 1. agentmemory's REST surface answers on the documented endpoints.
 # 2. The exact JSON shapes match what AgentMemoryBackend assumes
 #    (request body field names, response payload structure).
-# 3. Round-trip: observe a request, then smart_search the same
-#    project — the search returns the observed text.
+# 3. Round-trip: remember a fact, then smart_search the same
+#    project — the search returns the remembered text.
+#
+# NOTE: ``/agentmemory/observe`` is a separate endpoint that
+# requires Claude Code hook context (hookType / sessionId /
+# project / cwd / timestamp). The wire-level plugin uses
+# ``/agentmemory/remember`` instead, which accepts a single
+# ``content`` string. See coderouter_plugin_memory/backends/
+# agentmemory.py docstring for the full rationale.
 #
 # Why a script, not a Python integration test
 # ===========================================
@@ -84,43 +91,38 @@ elif [[ "${status:0:1}" != "2" ]]; then
 fi
 ok "health: HTTP ${status}"
 
-# ----- 2. observe -----
-observe_body=$(cat <<EOF
+# ----- 2. remember (write) -----
+#
+# v0.3.1 finding: /agentmemory/observe requires Claude Code hook
+# context (hookType, sessionId, project, cwd, timestamp) and is the
+# wrong endpoint for a wire-level plugin. /agentmemory/remember
+# accepts a single ``content`` string and returns 201 Created on
+# success. The plugin uses the same path.
+remember_body=$(cat <<EOF
 {
-  "project_id": "${PROJECT_ID}",
-  "tool_name": "coderouter_request",
-  "input": {
-    "last_user_message": "set up JWT authentication in src/middleware/auth.ts",
-    "had_tools": false,
-    "stream": false
-  },
-  "output": {
-    "text": "Done. Added jose middleware that validates HS256 tokens against AUTH_SECRET.",
-    "model": "claude-3-5-sonnet",
-    "stop_reason": "end_turn",
-    "input_tokens": 23,
-    "output_tokens": 17
-  }
+  "content": "[project=${PROJECT_ID}]\nuser: set up JWT authentication in src/middleware/auth.ts\nassistant: Done. Added jose middleware that validates HS256 tokens against AUTH_SECRET.",
+  "project_id": "${PROJECT_ID}"
 }
 EOF
 )
 
-info "POST ${ENDPOINT}/agentmemory/observe"
-status=$(curl "${curl_args[@]}" -o /tmp/cmem-observe.txt -w '%{http_code}' \
+info "POST ${ENDPOINT}/agentmemory/remember"
+status=$(curl "${curl_args[@]}" -o /tmp/cmem-remember.txt -w '%{http_code}' \
     -H 'content-type: application/json' \
-    -X POST --data-raw "${observe_body}" \
-    "${ENDPOINT}/agentmemory/observe" || echo "000")
+    -X POST --data-raw "${remember_body}" \
+    "${ENDPOINT}/agentmemory/remember" || echo "000")
+# /remember returns 201 Created (not 200) on success. We accept any 2xx.
 if [[ "${status:0:1}" != "2" ]]; then
-    note "observe response body:"
-    head -c 1000 /tmp/cmem-observe.txt; echo ""
-    fail "observe: HTTP ${status}"
+    note "remember response body:"
+    head -c 1000 /tmp/cmem-remember.txt; echo ""
+    fail "remember: HTTP ${status}"
 fi
-ok "observe: HTTP ${status}"
-note "observe body shape:"
+ok "remember: HTTP ${status}"
+note "remember body shape (look for memory.id and success=true):"
 if command -v jq >/dev/null 2>&1; then
-    jq . /tmp/cmem-observe.txt || cat /tmp/cmem-observe.txt
+    jq . /tmp/cmem-remember.txt || cat /tmp/cmem-remember.txt
 else
-    head -c 500 /tmp/cmem-observe.txt; echo ""
+    head -c 500 /tmp/cmem-remember.txt; echo ""
 fi
 
 # Give agentmemory a beat to index the observation. Most backends
