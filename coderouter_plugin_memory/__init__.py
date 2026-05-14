@@ -1,23 +1,22 @@
-"""coderouter-plugin-memory — wire-level memory plugin for CodeRouter.
+"""coderouter-plugin-memory — Zero-friction builtin memory for CodeRouter.
 
-Public API:
-    MemoryInjector  — InputFilter that injects memory into AnthropicRequest
-    MemoryRecorder  — Observer that records request/response pairs
+3-phase architecture:
+  capture     (Observer)    → buffer.jsonl
+  consolidate (CLI / cron)  → Ollama qwen3:1.7b → facts.jsonl
+  inject      (InputFilter) → system prompt prepend
+
+Storage: ~/.coderouter/memory/{project}/
+External deps: none (stdlib only)
 
 Entry points (registered in pyproject.toml):
-    coderouter.input_filter -> memory = MemoryInjector
-    coderouter.observer     -> memory = MemoryRecorder
+    coderouter.input_filter -> memory = MemoryPlugin
+    coderouter.observer     -> memory = MemoryPlugin
 
-Both are activated by adding ``memory`` to ``plugins.enabled`` in
-providers.yaml.
-
-Status: skeleton only. Functional code lands in 0.1.0 (P2).
+Both are activated by adding ``memory`` to ``plugins.enabled`` in providers.yaml.
 """
 from __future__ import annotations
 
-from coderouter_plugin_memory.inject import MemoryInjector
-from coderouter_plugin_memory.record import MemoryRecorder
+__version__ = "0.4.0"
+__all__ = ["MemoryPlugin"]
 
-__all__ = ["MemoryInjector", "MemoryRecorder"]
-
-__version__ = "0.1.0.dev0"
+from coderouter_plugin_memory.plugin import MemoryPlugin
