@@ -25,11 +25,11 @@ from coderouter_plugin_memory.config import MemoryConfig
 from coderouter_plugin_memory.store import (
     add_manual_fact,
     buffer_count,
+    clear_buffer,
     facts_count,
     read_buffer,
     read_facts,
     read_manual,
-    clear_buffer,
 )
 
 
@@ -56,7 +56,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     buf = buffer_count(cfg.buffer_path())
     fcts = facts_count(cfg.facts_path())
     manual_text = read_manual(cfg.manual_path())
-    manual_lines = len([l for l in manual_text.splitlines() if l.strip()]) if manual_text else 0
+    manual_lines = len([ln for ln in manual_text.splitlines() if ln.strip()]) if manual_text else 0
 
     print(f"project   : {cfg.project}")
     print(f"state_dir : {cfg.project_dir()}")
@@ -68,9 +68,9 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     if buf >= cfg.min_buffer_entries:
         print(f"\n💡 buffer が {buf} 件あります。consolidate を実行できます:")
-        print(f"   coderouter-memory consolidate")
+        print("   coderouter-memory consolidate")
     elif buf > 0:
-        print(f"\nℹ️  consolidate には最低 {cfg.min_buffer_entries} 件必要 (現在 {buf} 件)")
+        print(f"\n[i] consolidate には最低 {cfg.min_buffer_entries} 件必要 (現在 {buf} 件)")
     return 0
 
 
@@ -94,7 +94,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     manual = read_manual(cfg.manual_path())
     if manual:
-        print(f"\n[Manual notes]\n")
+        print("\n[Manual notes]\n")
         for line in manual.splitlines():
             if line.strip():
                 print(f"  {line}")
@@ -116,7 +116,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 def cmd_consolidate(args: argparse.Namespace) -> int:
     cfg = _make_cfg(args)
 
-    from coderouter_plugin_memory.consolidate import consolidate, ConsolidateError
+    from coderouter_plugin_memory.consolidate import ConsolidateError, consolidate
 
     dry_run: bool = args.dry_run
     if dry_run:

@@ -11,10 +11,10 @@
 """
 from __future__ import annotations
 
+import contextlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
 
 # ──────────────────────────────────────────────────────────────
 # 型エイリアス (軽量、dataclass 不要)
@@ -49,10 +49,8 @@ def read_buffer(path: Path) -> list[BufferEntry]:
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line:
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass  # 壊れた行はスキップ
     return entries
 
 
@@ -106,10 +104,8 @@ def read_facts(path: Path, max_facts: int = 50) -> list[FactEntry]:
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line:
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
     # 最新 max_facts 件だけ返す (古い→新しい順)
     return entries[-max_facts:] if len(entries) > max_facts else entries
 
@@ -158,7 +154,7 @@ def build_inject_text(
 
     if manual:
         lines.append("[Memory — manual notes]")
-        lines.extend(f"  {l}" for l in manual.splitlines() if l.strip())
+        lines.extend(f"  {ln}" for ln in manual.splitlines() if ln.strip())
 
     if facts:
         if lines:
@@ -181,7 +177,7 @@ def build_inject_text(
             lines_trimmed: list[str] = []
             if manual:
                 lines_trimmed.append("[Memory — manual notes]")
-                lines_trimmed.extend(f"  {l}" for l in manual.splitlines() if l.strip())
+                lines_trimmed.extend(f"  {ln}" for ln in manual.splitlines() if ln.strip())
             if facts:
                 if lines_trimmed:
                     lines_trimmed.append("")
@@ -200,4 +196,4 @@ def build_inject_text(
 # ──────────────────────────────────────────────────────────────
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")

@@ -176,6 +176,6 @@ def _prepend_memory(
 
     if isinstance(system, list):
         memory_block = {"type": "text", "text": inject_text}
-        return [memory_block] + list(system)
+        return [memory_block, *list(system)]
 
     return inject_text

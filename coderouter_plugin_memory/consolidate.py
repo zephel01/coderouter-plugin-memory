@@ -9,7 +9,6 @@ import json
 import re
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 from coderouter_plugin_memory.config import MemoryConfig
 from coderouter_plugin_memory.store import (
@@ -43,7 +42,7 @@ class ConsolidateError(Exception):
     """consolidate が失敗した場合に raise する。"""
 
 
-def consolidate(cfg: MemoryConfig, *, dry_run: bool = False) -> "ConsolidateResult":
+def consolidate(cfg: MemoryConfig, *, dry_run: bool = False) -> ConsolidateResult:
     """buffer.jsonl を読み、Ollama で fact 抽出して facts.jsonl に書く。
 
     dry_run=True のとき、抽出結果を表示するだけでファイルを変更しない。

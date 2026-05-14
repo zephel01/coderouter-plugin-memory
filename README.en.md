@@ -8,15 +8,15 @@
   <a href="https://github.com/zephel01/coderouter-plugin-memory/actions/workflows/ci.yml"><img src="https://github.com/zephel01/coderouter-plugin-memory/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://pypi.org/project/coderouter-plugin-memory/"><img src="https://img.shields.io/pypi/v/coderouter-plugin-memory?include_prereleases&color=blue&label=pypi" alt="pypi"></a>
   <a href=""><img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="python"></a>
-  <a href=""><img src="https://img.shields.io/badge/runtime%20deps-1-brightgreen" alt="deps"></a>
+  <a href=""><img src="https://img.shields.io/badge/runtime%20deps-0-brightgreen" alt="deps"></a>
   <a href=""><img src="https://img.shields.io/badge/license-MIT-yellow" alt="license"></a>
 </p>
 
 <p align="center">
-  <a href="./README.md">日本語</a> · <strong>English</strong> · <a href="https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md">Design doc</a> · <a href="https://github.com/zephel01/CodeRouter">CodeRouter</a>
+  <a href="./README.md">日本語</a> · <strong>English</strong> · <a href="https://github.com/zephel01/CodeRouter">CodeRouter</a>
 </p>
 
-> **Status.** Three backends (`builtin` / `agentmemory` / `null` / planned `mem0`), circuit breaker, 112 unit tests. **Live round-trip verified against an agentmemory server** (`/agentmemory/remember` → memory_id issued → `/agentmemory/smart-search` returns hit). Pairs with the Plugin SDK shipped in CodeRouter `v2.3.0a1+`. The current released version is shown by the `pypi` badge above; per-release notes live in [CHANGELOG](./CHANGELOG.md). The design rationale is in the [design doc](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md).
+> **v0.4.0**: Completely redesigned the builtin backend around JSONL + Ollama (qwen3:1.7b). Zero runtime dependencies (stdlib only). The `coderouter-memory` CLI gives instant visibility into what the plugin is doing. Pairs with CodeRouter `v2.3.0a1+`.
 
 ---
 
@@ -26,41 +26,28 @@
 Your agent (Claude Code / Cursor / your-own-agent)
                 │   ← memory-unaware, no SDK changes
                 ▼
-        ┌─ CodeRouter ───────────────┐
-        │  ① pre-request hook         │ ─→ smart-search the memory backend
-        │     append_system_prompt    │
-        │  ② routing + L1-L6 guards   │
-        │  ③ post-response hook       │ ─→ observe (record into backend)
-        └─────────────────────────────┘
+        ┌─ CodeRouter ────────────────────┐
+        │  ① pre-request hook              │ ─→ inject facts.jsonl into system prompt
+        │  ② routing + L1-L6 guards        │
+        │  ③ post-response hook            │ ─→ append response to buffer.jsonl
+        └──────────────────────────────────┘
                 │
                 ▼
-            Local LLM (Ollama / LM Studio / cloud)
+            Local LLM (Ollama / LM Studio / ...)
+
+  [After your work session — one command]
+  coderouter-memory consolidate
+  → Ollama (qwen3:1.7b) reads the buffer, extracts key facts → facts.jsonl
+  → Auto-injected from the next session onward
 ```
 
-**What it does for you:**
+**Three phases:**
 
-- The agent inherits memory **without knowing memory exists** — wire-layer injection
-- The memory engine is **swappable** (sqlite3 builtin / agentmemory recommended / mem0 / null)
-- **Zero code changes** in your agent — just route through CodeRouter
-- If memory breaks, routing keeps going (degrade pathway built in)
-- Same memory experience for Claude Code and your-own-agent — they share the wire
-
----
-
-## Why "wire-layer"?
-
-Most agent-memory tools ([agentmemory](https://github.com/rohitg00/agentmemory), [mem0](https://github.com/mem0ai/mem0), [Letta](https://github.com/letta-ai/letta)) live **agent-side**: the agent has to call `memory_save` / `memory_recall` via MCP tools or an SDK. That's fine for Claude Code or Cursor, which already speak MCP — but it leaves out **anyone writing their own agent** or using a tool that doesn't.
-
-This plugin sits in the **wire layer** instead (between agent and LLM backend):
-
-| Aspect            | Agent-side memory tools (agentmemory, etc.) | This plugin (wire-layer)                       |
-|-------------------|--------------------------------------------|-----------------------------------------------|
-| Agent-side code   | MCP client / SDK calls required            | **None** — just route through CodeRouter      |
-| Supported agents  | MCP-capable agents only                    | **Any agent that speaks the Anthropic API**   |
-| Memory engine     | Built-in                                   | **Delegated to a backend (agentmemory etc.)** |
-| Feature depth     | Self-contained                             | Wire-layer injection only (engine = backend)  |
-
-The two are not competitors — they're complements. The ideal setup is **both**: the agent calls agentmemory directly via MCP, AND CodeRouter injects memory transparently in the wire. That way, memory works regardless of how diligent the agent is about calling its memory tools.
+| Phase | When | What happens |
+|---|---|---|
+| **capture** | Every response (automatic) | Appends response text to `buffer.jsonl` |
+| **consolidate** | After work session (manual or cron) | Ollama distills buffer → key facts → `facts.jsonl` |
+| **inject** | Before each request next session (automatic) | Prepends `facts.jsonl` to the system prompt |
 
 ---
 
@@ -74,74 +61,116 @@ uv tool install coderouter-cli
 
 # This plugin
 pip install coderouter-plugin-memory
+
+# Consolidation model — one-time pull
+ollama pull qwen3:1.7b
 ```
 
-### 2. Start a memory backend (`agentmemory` recommended)
-
-```bash
-# In a separate terminal
-npx -y @agentmemory/agentmemory
-# → listens on http://localhost:3111
-```
-
-### 3. Add to `providers.yaml`
+### 2. Add to `providers.yaml`
 
 ```yaml
 plugins:
   enabled:
-    - memory                       # ← entry-point name, NOT the package name
+    - memory
   config:
     memory:
-      backend: agentmemory         # builtin / agentmemory / mem0 / null
-      endpoint: http://localhost:3111
-      inject_token_budget: 2000    # cap on tokens injected into the system prompt
-      secret_env: AGENTMEMORY_SECRET  # env var holding the auth token
+      # project is optional — auto-detected from cwd hash
+      project: myapp
+      consolidate_model: qwen3:1.7b        # swap for any lightweight model
+      inject_token_budget: 2000            # token cap on system prompt injection
+      min_buffer_entries: 3               # minimum entries before consolidate runs
 ```
 
-### 4. Start CodeRouter
+### 3. Start CodeRouter
 
 ```bash
 coderouter serve --port 8088
-# Startup log: plugin-loaded plugin=memory group=input_filter / observer
+# Startup log: [memory] plugin-loaded
 ```
 
-That's it. Point your agent at CodeRouter and the previous session's context is restored automatically.
+### 4. Consolidate after your session
+
+```bash
+coderouter-memory consolidate
+# 5 buffer entries → Ollama extracts facts → written to facts.jsonl
+# Auto-injected from the next session onward
+```
 
 ---
 
-## Backends
+## CLI reference
 
-| Backend       | Status     | When to pick this                                                                            |
-|---------------|------------|---------------------------------------------------------------------------------------------|
-| `builtin`     | ✅ shipped | You don't want extra services running. sqlite3 + LIKE search, minimum viable.                |
-| `agentmemory` | ✅ shipped | **Recommended.** R@5 95.2% on LongMemEval-S, 4-tier consolidation, 92% token reduction. `npx`-launched. |
-| `null`        | ✅ shipped | Explicit disable, or auto-fallback when the chosen backend is unhealthy.                     |
-| `mem0`        | ⏳ Planned | You're already invested in [mem0](https://github.com/mem0ai/mem0) (demand-driven).            |
+```bash
+# Check current state (first thing to run when debugging)
+coderouter-memory status
 
-All backends implement the same `MemoryBackend` Protocol, so switching is just a string change in `providers.yaml`. Per-release notes live in [CHANGELOG](./CHANGELOG.md).
+# List stored facts
+coderouter-memory list
+
+# Pin a fact manually (like a project-level CLAUDE.md)
+coderouter-memory add "Using FastAPI with async handlers"
+
+# Preview what consolidate would extract, without writing anything
+coderouter-memory consolidate --dry-run
+
+# Run consolidation
+coderouter-memory consolidate
+
+# Inspect raw buffer entries (debug)
+coderouter-memory buffer
+
+# Drop the buffer
+coderouter-memory clear
+```
+
+Example `status` output:
+
+```
+project   : proj-fd5766aa25d0          ← auto-detected from cwd
+state_dir : ~/.coderouter/memory/proj-fd5766aa25d0
+buffer    : 7 entries
+facts     : 12 entries
+manual    : 2 lines
+model     : qwen3:1.7b
+ollama    : http://localhost:11434
+
+💡 buffer has 7 entries. Ready to consolidate:
+   coderouter-memory consolidate
+```
 
 ---
 
-## Roadmap
+## Storage layout
 
-| Phase | What                                                                  | Status |
-|-------|-----------------------------------------------------------------------|--------|
-| P1    | Plugin SDK in CodeRouter Core (`coderouter.plugins`)                  | ✅ shipped ([coderouter-cli](https://pypi.org/project/coderouter-cli/)) |
-| P2    | builtin sqlite3 backend / project_id / Inject / Record + tests        | ✅ shipped |
-| P3    | agentmemory backend + integration tests + smoke script                | ✅ shipped |
-| P4    | circuit breaker (degrade on consecutive failures) + walkthrough + examples | ✅ shipped |
-| P0    | agentmemory live-endpoint smoke (`scripts/smoke_agentmemory.sh`)       | ✅ shipped (switched `/observe` → `/remember`) |
-| P5    | mem0 backend                                                          | ⏳ demand-driven |
+Everything is plain text — open and edit in any editor.
 
-Detailed implementation plan: [`v2.3-plugin-memory-plan.md`](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/v2.3-plugin-memory-plan.md)
+```
+~/.coderouter/memory/{project}/
+    buffer.jsonl   — raw captured responses (one JSON object per line)
+    facts.jsonl    — consolidated key facts (one fact per line)
+    manual.md      — hand-written notes (injected alongside facts)
+```
+
+---
+
+## Why "wire-layer"?
+
+Most agent-memory tools ([agentmemory](https://github.com/rohitg00/agentmemory), [mem0](https://github.com/mem0ai/mem0)) live **agent-side**: the agent calls `memory_save` / `memory_recall` via MCP tools or an SDK. That works fine for Claude Code or Cursor — but it leaves out anyone writing a **custom agent** or using a non-MCP client.
+
+This plugin lives in the **wire layer** instead (between agent and LLM backend):
+
+| Aspect | Agent-side memory tools | This plugin (wire-layer) |
+|---|---|---|
+| Agent-side code | MCP client / SDK calls required | **None** — just route through CodeRouter |
+| Supported agents | MCP-capable agents only | **Any agent that speaks the Anthropic API** |
+| Extra processes | Memory server must be running | **Ollama only** (you already have it) |
+| Runtime deps | httpx etc. | **stdlib only** |
 
 ---
 
 ## Walkthrough — your-own-agent gets memory for free
 
-The real value lands when you're writing the agent yourself: **you get memory without writing memory code**.
-
-### 30-line agent (`examples/walkthrough_agent.py` excerpt)
+### 30-line agent
 
 ```python
 import sys, os
@@ -153,7 +182,7 @@ client = OpenAI(
 )
 
 resp = client.chat.completions.create(
-    model="qwen3.6:35b-a3b",
+    model="qwen3:14b",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": " ".join(sys.argv[1:])},
@@ -162,36 +191,33 @@ resp = client.chat.completions.create(
 print(resp.choices[0].message.content)
 ```
 
-**What's NOT in the script**:
-- No `memory_save` / `memory_recall` calls
-- No MCP client setup
-- No sqlite / vector store / Redis imports
-- No rate-limit, fallback chain, or drift detection logic
+**What's NOT in the script**: `memory_save` / `memory_recall` / MCP client / sqlite / vector store — the wire layer handles all of it.
 
-CodeRouter's wire layer handles all of it.
-
-### Run it (two sessions)
+### Two sessions
 
 ```bash
-# Terminal 1: optional — start agentmemory
-npx -y @agentmemory/agentmemory   # skip if you're on the builtin backend
+# Session 1
+python agent.py "Remember: the project accent color is indigo."
+# → "Got it, the accent color is indigo."
 
-# Terminal 2: CodeRouter
-coderouter serve --port 8088
+# After your session
+coderouter-memory consolidate
+# → Ollama extracts: "project accent color is indigo"
 
-# Terminal 3: run the agent twice
-python examples/walkthrough_agent.py "Remember: the project's accent color is indigo."
-# → "Got it — I'll remember the project color is indigo."
-
-python examples/walkthrough_agent.py "What's the project's accent color?"
-# → "Indigo."   ← previous session's context flows in transparently
+# Session 2 (next day)
+python agent.py "What's the project accent color?"
+# → "Indigo."   ← facts.jsonl was injected into the system prompt automatically
 ```
 
-The agent code has **zero lines** of "fetch memory" logic. The second answer remembers the first session because the plugin prepends a `<previous-session-context>` block to the system prompt at the wire layer.
+---
 
-See [`examples/`](./examples/README.md) for full code + sample provider configs.
+## Roadmap
 
-**Build less in your agent, get more from the wire.**
+| Version | What | Status |
+|---|---|---|
+| v0.1–0.3 | Plugin SDK integration / multi-backend (sqlite3 · agentmemory · null) / circuit breaker | ✅ shipped |
+| **v0.4.0** | **Redesigned builtin: JSONL + Ollama consolidation / CLI / stdlib-only** | ✅ **current** |
+| v0.5 (planned) | agentmemory backend as an optional extra (demand-driven) | ⏳ |
 
 ---
 
@@ -200,10 +226,9 @@ See [`examples/`](./examples/README.md) for full code + sample provider configs.
 | Project | Role | Relationship |
 |---|---|---|
 | [CodeRouter](https://github.com/zephel01/CodeRouter) | The wire-layer router itself | **Required** — hosts the Plugin SDK |
-| [agentmemory](https://github.com/rohitg00/agentmemory) | Agent memory MCP server | **Recommended backend.** R@5 95.2% |
-| [mem0](https://github.com/mem0ai/mem0) | Memory layer API | Optional backend |
+| [Ollama](https://github.com/ollama/ollama) | Local LLM runtime | Used in the consolidate phase |
+| [agentmemory](https://github.com/rohitg00/agentmemory) | Agent memory MCP server | Future optional backend candidate |
 | [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Self-improving agent framework | Higher layer, complementary |
-| [Plugin SDK design](https://github.com/zephel01/CodeRouter/blob/main/docs/inside/plugin-architecture-draft.md) | CodeRouter's plugin contract | The spec this plugin implements |
 
 ---
 
