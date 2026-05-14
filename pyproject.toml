@@ -12,13 +12,13 @@
 #
 # Design doc: CodeRouter/docs/inside/v2.3-plugin-memory-plan.md
 name = "coderouter-plugin-memory"
-version = "0.3.1"
-description = "Wire-level memory plugin for CodeRouter — pluggable backends (builtin / agentmemory / mem0 / null)."
+version = "0.4.0"
+description = "Zero-friction builtin memory for CodeRouter — capture, consolidate (Ollama), inject"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "zephel01", email = "zephel01@gmail.com" }]
-keywords = ["coderouter", "plugin", "memory", "agentmemory", "llm", "claude-code", "agent"]
+keywords = ["coderouter", "plugin", "memory", "ollama", "llm", "claude-code", "agent"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
@@ -32,30 +32,16 @@ classifiers = [
 ]
 
 # ============================================================
-# Runtime dependencies — keep minimal.
-# httpx is the only required runtime dep (used by the
-# agentmemory backend). builtin / null backends use stdlib only.
-# coderouter-cli is a peer dep (Plugin SDK source) but we do NOT
-# pin it as a runtime requirement — users install it themselves.
-# That keeps `pip install coderouter-plugin-memory` from forcing a
-# CodeRouter version on the user when CodeRouter isn't even running.
+# Runtime dependencies — stdlib only.
+# consolidate フェーズは urllib.request のみ使用 (httpx 不要)。
+# coderouter-cli は peer dep — ユーザーが自分でインストールする。
 # ============================================================
-dependencies = [
-    "httpx>=0.27.0",
-]
+dependencies = []  # stdlib only (pathlib, json, hashlib, datetime, urllib)
 
 [project.optional-dependencies]
-# Optional mem0 backend. Pull only when the user opts in:
-#   pip install coderouter-plugin-memory[mem0]
-# Kept optional because mem0 carries a heavy dep tree (vector DB
-# clients) that the average user does not need.
-mem0 = [
-    "mem0ai>=0.1.0",
-]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
-    "pytest-httpx>=0.32.0",
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "coderouter-cli>=2.3.0a0",
@@ -69,10 +55,13 @@ dev = [
 # name; the user enables one slug to activate both.
 # ============================================================
 [project.entry-points."coderouter.input_filter"]
-memory = "coderouter_plugin_memory:MemoryInjector"
+memory = "coderouter_plugin_memory.plugin:MemoryPlugin"
 
 [project.entry-points."coderouter.observer"]
-memory = "coderouter_plugin_memory:MemoryRecorder"
+memory = "coderouter_plugin_memory.plugin:MemoryPlugin"
+
+[project.scripts]
+coderouter-memory = "coderouter_plugin_memory.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/zephel01/coderouter-plugin-memory"
