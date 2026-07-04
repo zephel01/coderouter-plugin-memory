@@ -6,6 +6,70 @@ versioning follows [SemVer](https://semver.org/).
 
 ---
 
+## [0.4.1] — 2026-07-04 (review-driven correctness pass)
+
+Follow-up to the 0.4.0 rewrite. No public API change; existing 0.4.x configs
+keep working.
+
+### Fixed
+- **Empty `project` no longer collapses the storage path.** `MemoryConfig`
+  now falls back to `"default"` when `project` is blank/whitespace (and
+  `_safe_name("")` returns `"default"`), so `project: ""` can't make
+  `project_dir()` resolve to `state_dir` itself and mix projects together.
+- **Stale/unknown config keys no longer crash the plugin.** `MemoryPlugin`
+  filters kwargs to known `MemoryConfig` fields and warns on the rest, so a
+  pre-0.4 `providers.yaml` (with `backend:` / `endpoint:` / …) degrades
+  instead of raising `TypeError` through the router.
+- **Unknown response types are no longer persisted.** `_extract_response_text`
+  returns `""` (and logs) for objects that are neither the expected content
+  list nor a plain `str`, avoiding writing an arbitrary `__repr__` (which
+  could contain secrets) to `buffer.jsonl`.
+
+### Changed
+- **CircuitBreaker is wired in (was dead code).** `consolidate` now guards the
+  Ollama call with a per-process breaker and a configurable
+  `consolidate_timeout_s` (default 60), and takes a `.consolidate.lock` to
+  prevent concurrent runs from corrupting `buffer.jsonl` / `facts.jsonl`.
+  `CircuitBreaker` is also exported from the package.
+- `build_inject_text` rewritten to trim the token budget in O(n) with a single
+  string assembly (was an O(n²) rebuild-per-drop loop with duplicated code).
+- Examples rewritten to the v0.4.x schema (the old `backend:` / `endpoint:` /
+  `secret_env:` / `circuit_breaker_*` keys are gone); `providers.null.yaml`
+  now uses `capture_enabled: false` / `inject_enabled: false`.
+- `pyproject.toml` header and `examples/README.md` updated to describe the
+  JSONL architecture; `scripts/smoke_agentmemory.sh` stubbed as deprecated.
+- Clarified the `read_facts` docstring (returns the newest N in record order,
+  not re-sorted).
+
+## [0.4.0] — 2026-06-XX (full rewrite: single JSONL backend)
+
+**Breaking.** The multi-backend design was replaced by one dependency-free
+local store. This is the release the 0.3.x changelog entries below no longer
+describe, so it is recorded here explicitly.
+
+### Removed
+- The `backend` selector and all non-builtin backends: `agentmemory` (HTTP),
+  `mem0` (SDK), and `null`. With them went the config keys `backend`,
+  `endpoint`, `secret_env`, `search_limit`, and `circuit_breaker_*`, and the
+  `httpx` runtime dependency (now stdlib-only).
+
+### Changed
+- Storage is now JSONL under `~/.coderouter/memory/<project>/`
+  (`buffer.jsonl`, `facts.jsonl`, `manual.md`) instead of sqlite3 / a remote
+  server.
+- Architecture is three explicit phases: **capture** (Observer →
+  `buffer.jsonl`), **consolidate** (CLI/cron → a local Ollama model →
+  `facts.jsonl`), **inject** (InputFilter → system-prompt prepend). The old
+  `inject.py` / `record.py` modules were merged into `plugin.py`.
+- Disabling memory is now `capture_enabled: false` + `inject_enabled: false`
+  (there is no `backend: null`).
+
+### Notes
+- `_circuit.py` shipped but was left unwired in 0.4.0; it is connected to the
+  consolidate path in 0.4.1 above.
+
+---
+
 ## [0.3.1] — 2026-05-08 (P0 smoke fix — switch agentmemory observe to /remember)
 
 Patch over `0.3.0`. P0 (live-endpoint smoke verification) ran against a

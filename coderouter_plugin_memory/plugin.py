@@ -10,6 +10,7 @@ Plugin SDK の契約:
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Any
 
@@ -41,7 +42,16 @@ class MemoryPlugin:
     name = "memory"
 
     def __init__(self, **kwargs: Any) -> None:
-        self._cfg = MemoryConfig(**{k: v for k, v in kwargs.items() if v is not None})
+        # Only forward recognized MemoryConfig fields. A stale providers.yaml
+        # (e.g. one carrying pre-0.4 keys like `backend:` / `endpoint:`) must
+        # not crash the router with an unexpected-keyword TypeError — an
+        # optional plugin degrades, it never takes ingress down.
+        valid = {f.name for f in dataclasses.fields(MemoryConfig)}
+        clean = {k: v for k, v in kwargs.items() if k in valid and v is not None}
+        ignored = sorted(set(kwargs) - valid)
+        if ignored:
+            logger.warning("memory-config-unknown-keys", extra={"ignored": ignored})
+        self._cfg = MemoryConfig(**clean)
         self._cfg.project_dir().mkdir(parents=True, exist_ok=True)
         logger.info(
             "memory-plugin-loaded",
@@ -143,6 +153,10 @@ def _extract_response_text(response: Any) -> str:
     """AnthropicResponse または _StreamUsageAccumulator から応答テキストを取り出す。
 
     content は list[dict] で、各要素は {"type": "text", "text": "..."} の形。
+
+    未知の型は ``str(response)`` を捨てて空文字を返す (skip)。任意オブジェクトの
+    ``__repr__`` には API キー等の機微情報が紛れ込む可能性があり、それを
+    buffer.jsonl に永続化するのは避けたい。プレーンな str だけは意図的に許可する。
     """
     if response is None:
         return ""
@@ -155,7 +169,15 @@ def _extract_response_text(response: Any) -> str:
                 parts.append(block.get("text", ""))
         return " ".join(parts).strip()
 
-    return str(response)[:2000]
+    if isinstance(response, str):
+        return response[:2000]
+
+    # 未知のレスポンス型: repr をディスクに書かず capture をスキップする。
+    logger.debug(
+        "memory-capture-unknown-response-type",
+        extra={"type": type(response).__name__},
+    )
+    return ""
 
 
 def _prepend_memory(

@@ -4,11 +4,11 @@
 #   - 普段は qwen2.5-coder:14b (9 GB) で速く返す
 #   - 落ちたら qwen3.6:35b-a3b-q4_K_M (23 GB MoE、3B active) に降格
 #   - それも駄目なら gemma4:31b (19 GB) で確実に応答
-#   - L1-L6 ガード + 回路ブレーカー + agentmemory が全段で効く
+#   - L1-L6 ガード + 回路ブレーカー + v0.4.0 JSONL memory が全段で効く
 #
 # 前提:
 #   - Ollama に上 3 モデルが pull 済み (`ollama pull <name>`)
-#   - agentmemory が `npx -y @agentmemory/agentmemory` で起動中
+#   - consolidate 用の軽量モデル (qwen3:1.7b 等) も pull 済み
 
 providers:
   - name: ollama-coder-fast
@@ -40,9 +40,9 @@ plugins:
     - memory
   config:
     memory:
-      backend: agentmemory
-      endpoint: http://localhost:3111
+      # v0.4.0 JSONL memory (backend selector removed — see providers.builtin.yaml)
+      consolidate_model: qwen3:1.7b
+      ollama_base_url: http://localhost:11434
       inject_token_budget: 2000
-      secret_env: AGENTMEMORY_SECRET
-      circuit_breaker_threshold: 5
-      circuit_breaker_cooldown_s: 60.0
+      min_buffer_entries: 3
+      max_inject_facts: 10

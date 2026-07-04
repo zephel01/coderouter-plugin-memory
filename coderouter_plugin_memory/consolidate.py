@@ -5,11 +5,14 @@ Ollama が起動していない場合は ConsolidateError を raise する。
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import re
 import urllib.error
 import urllib.request
 
+from coderouter_plugin_memory._circuit import CircuitBreaker
 from coderouter_plugin_memory.config import MemoryConfig
 from coderouter_plugin_memory.store import (
     BufferEntry,
@@ -18,6 +21,13 @@ from coderouter_plugin_memory.store import (
     existing_fact_texts,
     read_buffer,
 )
+
+# Per-process breaker for the Ollama backend. When consolidate() is invoked
+# repeatedly inside one long-lived process (e.g. an in-process scheduler)
+# against a downed Ollama, this short-circuits after a few failures instead of
+# paying the full timeout every time. A one-shot CLI run starts CLOSED, so the
+# first attempt always goes through.
+_OLLAMA_BREAKER = CircuitBreaker(threshold=3, cooldown_s=30.0)
 
 EXTRACT_PROMPT = """\
 以下は AI アシスタントの応答ログです。
@@ -46,7 +56,30 @@ def consolidate(cfg: MemoryConfig, *, dry_run: bool = False) -> ConsolidateResul
     """buffer.jsonl を読み、Ollama で fact 抽出して facts.jsonl に書く。
 
     dry_run=True のとき、抽出結果を表示するだけでファイルを変更しない。
+
+    同一プロジェクトに対する consolidate は、buffer のクリアと facts 追記が
+    競合しないよう、ロックファイルで排他する (二重起動は skip)。
     """
+    project_dir = cfg.project_dir()
+    project_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = project_dir / ".consolidate.lock"
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
+        return ConsolidateResult(
+            skipped=True,
+            reason="another consolidate run is in progress (lock held)",
+        )
+
+    try:
+        return _consolidate_locked(cfg, dry_run=dry_run)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            lock_path.unlink()
+
+
+def _consolidate_locked(cfg: MemoryConfig, *, dry_run: bool) -> ConsolidateResult:
     buffer_path = cfg.buffer_path()
     facts_path = cfg.facts_path()
 
@@ -113,8 +146,22 @@ def _combine_buffer(entries: list[BufferEntry], max_chars: int) -> str:
     return "\n\n---\n\n".join(reversed(combined_parts))
 
 
-def _call_ollama(cfg: MemoryConfig, text: str) -> list[str]:
-    """Ollama /api/generate を呼び出して facts リストを返す。"""
+def _call_ollama(
+    cfg: MemoryConfig, text: str, *, breaker: CircuitBreaker | None = None
+) -> list[str]:
+    """Ollama /api/generate を呼び出して facts リストを返す。
+
+    連続失敗時はサーキットブレーカーが OPEN になり、cooldown 中は接続を試みず
+    即座に ConsolidateError を返す (down した Ollama への無駄な待ち時間を回避)。
+    """
+    breaker = breaker or _OLLAMA_BREAKER
+    if breaker.should_skip():
+        raise ConsolidateError(
+            "Ollama サーキットブレーカーが OPEN です (直近の連続失敗により "
+            f"約 {breaker.open_seconds_remaining:.0f}s スキップ中)。"
+            " Ollama が起動しているか確認してください: ollama serve"
+        )
+
     prompt = EXTRACT_PROMPT.format(text=text)
     payload = json.dumps({
         "model": cfg.consolidate_model,
@@ -131,16 +178,19 @@ def _call_ollama(cfg: MemoryConfig, text: str) -> list[str]:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=cfg.consolidate_timeout_s) as resp:
             body = json.loads(resp.read().decode())
     except urllib.error.URLError as exc:
+        breaker.record_failure()
         raise ConsolidateError(
             f"Ollama に接続できませんでした ({url}): {exc}\n"
             f"Ollama が起動しているか確認してください: ollama serve"
         ) from exc
     except Exception as exc:
+        breaker.record_failure()
         raise ConsolidateError(f"Ollama 呼び出しエラー: {exc}") from exc
 
+    breaker.record_success()
     response_text = body.get("response", "")
     return _parse_facts(response_text)
 

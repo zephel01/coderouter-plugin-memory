@@ -1,20 +1,16 @@
-# Minimal config — builtin sqlite3 backend.
+# Minimal config — v0.4.0 builtin JSONL memory.
+#
+# NOTE (v0.4.0): the pre-0.4 backend selector (`backend: builtin|agentmemory|
+# mem0|null`) and the sqlite3 store were removed. Memory is now a single,
+# dependency-free JSONL store under ~/.coderouter/memory/<project>/ with three
+# phases: capture (Observer) → consolidate (Ollama CLI) → inject (InputFilter).
+# This file shows the default, zero-extra-services setup.
 #
 # What this gives you:
-#   - sqlite3 file at ~/.coderouter/memory.sqlite3 (auto-created)
-#   - keyword LIKE search, recency-ordered
-#   - zero extra services — works offline
-#
-# When to pick this over agentmemory:
-#   - You don't want to run another process.
-#   - You're trying the plugin out before committing to agentmemory.
-#   - Very small memory footprint (one Python process, no Node, no
-#     iii-engine binary).
-#
-# Trade-off:
-#   - LIKE matches the longest word in the user's message; doesn't
-#     handle synonyms / different wordings. agentmemory's R@5 is
-#     95.2% — builtin is much lower for the same workload.
+#   - buffer.jsonl / facts.jsonl / manual.md per project (auto-created)
+#   - offline, no extra process, no native deps
+#   - fact extraction via a small local Ollama model on
+#     `coderouter-memory consolidate` (run manually or from cron)
 
 providers:
   - name: ollama-local
@@ -31,6 +27,10 @@ plugins:
     - memory   # entry-point name, NOT the package name
   config:
     memory:
-      backend: builtin
-      inject_token_budget: 2000
-      # store: ~/my-project/.memory.sqlite3   # optional override
+      # project 省略時は cwd / 環境変数から自動検出
+      consolidate_model: qwen3:1.7b          # consolidate に使う軽量 Ollama モデル
+      ollama_base_url: http://localhost:11434
+      inject_token_budget: 2000              # system prompt 注入の上限 (chars/4)
+      min_buffer_entries: 3                  # consolidate 発火の最小 buffer 件数
+      max_inject_facts: 10
+      # state_dir: ~/.coderouter/memory       # 保存先ルートの上書き (任意)
