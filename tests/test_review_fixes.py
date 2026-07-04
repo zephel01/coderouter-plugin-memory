@@ -10,13 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from coderouter_plugin_memory.config import MemoryConfig, _safe_name
 from coderouter_plugin_memory.consolidate import consolidate
 from coderouter_plugin_memory.plugin import MemoryPlugin, _extract_response_text
 from coderouter_plugin_memory.store import build_inject_text
-
 
 # --- M-9: empty project fallback --------------------------------------------
 

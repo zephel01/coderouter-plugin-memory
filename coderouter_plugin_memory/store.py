@@ -97,7 +97,7 @@ def append_facts(path: Path, facts: list[str], project: str, source: str = "cons
 
 
 def read_facts(path: Path, max_facts: int = 50) -> list[FactEntry]:
-    """facts.jsonl の末尾 (＝新しい方) から max_facts 件を、記録順 (古→新) の
+    """facts.jsonl の末尾 (新しい方) から max_facts 件を、記録順 (古い->新しい) の
     まま返す。並べ替えは行わない (新しい順にソートし直すわけではない)。"""
     if not path.exists():
         return []
