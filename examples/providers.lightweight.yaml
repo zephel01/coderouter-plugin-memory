@@ -2,7 +2,7 @@
 #
 # シナリオ:
 #   - 1 モデルのみ (qwen2.5-coder:7b、4.7 GB)
-#   - memory backend は builtin sqlite3 (agentmemory プロセス不要)
+#   - memory は v0.4.0 JSONL (外部プロセス不要)
 #   - 起動から 30 秒で動作確認できる最小セット
 #
 # 期待 RAM 消費:
@@ -25,6 +25,7 @@ plugins:
     - memory
   config:
     memory:
-      backend: builtin
-      # store: ~/.coderouter/memory.sqlite3   # default、project root で OK
+      # v0.4.0 JSONL memory (backend selector removed — see providers.builtin.yaml)
+      consolidate_model: qwen3:1.7b
       inject_token_budget: 1500              # 軽め
+      max_inject_facts: 6

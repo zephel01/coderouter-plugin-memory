@@ -42,7 +42,8 @@ plugins:
     - memory
   config:
     memory:
-      backend: agentmemory
-      endpoint: http://localhost:3111
+      # v0.4.0 JSONL memory (backend selector removed — see providers.builtin.yaml)
+      consolidate_model: qwen3:1.7b
+      ollama_base_url: http://localhost:11434
       inject_token_budget: 2000
-      secret_env: AGENTMEMORY_SECRET
+      min_buffer_entries: 3

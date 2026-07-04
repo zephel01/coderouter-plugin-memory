@@ -1,18 +1,19 @@
 [project]
-# Wire-level memory plugin for CodeRouter. Sits at the wire layer
-# (between agent and backend) and transparently injects memory context
-# into requests + records responses to a pluggable memory backend.
+# Zero-friction builtin memory for CodeRouter (v0.4.x architecture).
 #
-# 4 backends (chosen via providers.yaml):
-#   - builtin    : sqlite3 (stdlib only, minimal features)
-#   - agentmemory: HTTP client to a running agentmemory server
-#                  (R@5 95.2% on LongMemEval-S; recommended)
-#   - mem0       : mem0 SDK adapter (last; deps heavy)
-#   - null       : no-op (explicit disable / degrade pathway)
+# A single, dependency-free JSONL store under ~/.coderouter/memory/<project>/
+# driven by three phases:
+#   - capture     (Observer)    → append responses to buffer.jsonl
+#   - consolidate (CLI / cron)  → a small local Ollama model distills the
+#                                 buffer into key facts.jsonl
+#   - inject      (InputFilter) → prepend facts + manual notes to the system
+#                                 prompt on the next request
 #
-# Design doc: CodeRouter/docs/inside/v2.3-plugin-memory-plan.md
+# The pre-0.4 multi-backend design (builtin=sqlite3 / agentmemory / mem0 /
+# null) and the httpx dependency were removed; a networked backend may return
+# in v0.5. stdlib only.
 name = "coderouter-plugin-memory"
-version = "0.4.0"
+version = "0.4.1"
 description = "Zero-friction builtin memory for CodeRouter — capture, consolidate (Ollama), inject"
 readme = "README.md"
 requires-python = ">=3.12"

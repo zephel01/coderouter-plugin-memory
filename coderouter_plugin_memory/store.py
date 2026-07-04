@@ -97,7 +97,8 @@ def append_facts(path: Path, facts: list[str], project: str, source: str = "cons
 
 
 def read_facts(path: Path, max_facts: int = 50) -> list[FactEntry]:
-    """facts.jsonl を最新 max_facts 件読む (古い順)。"""
+    """facts.jsonl の末尾 (＝新しい方) から max_facts 件を、記録順 (古→新) の
+    まま返す。並べ替えは行わない (新しい順にソートし直すわけではない)。"""
     if not path.exists():
         return []
     entries = []
@@ -147,48 +148,54 @@ def build_inject_text(
 ) -> str | None:
     """system prompt に注入するテキストを組み立てる。
 
-    token_budget を chars/4 heuristic で換算し、超えた場合は facts を末尾から切り捨てる。
-    注入するものが何もない場合は None を返す。
+    token_budget を chars/4 heuristic で換算し、超えた場合は古い fact から
+    切り捨てて新しいものを優先的に残す。注入するものが何もない場合は None。
     """
-    lines: list[str] = []
-
-    if manual:
-        lines.append("[Memory — manual notes]")
-        lines.extend(f"  {ln}" for ln in manual.splitlines() if ln.strip())
-
-    if facts:
-        if lines:
-            lines.append("")
-        lines.append("[Memory — past context]")
-        for entry in facts[-max_facts:]:
-            lines.append(f"  - {entry['fact']}")
-
-    if not lines:
-        return None
-
-    text = "\n".join(lines)
-
-    # token budget (chars/4 heuristic)
     char_limit = token_budget * 4
-    if len(text) > char_limit:
-        # 予算オーバーなら fact を前から削っていく
-        while len(text) > char_limit and facts:
-            facts = facts[1:]
-            lines_trimmed: list[str] = []
-            if manual:
-                lines_trimmed.append("[Memory — manual notes]")
-                lines_trimmed.extend(f"  {ln}" for ln in manual.splitlines() if ln.strip())
-            if facts:
-                if lines_trimmed:
-                    lines_trimmed.append("")
-                lines_trimmed.append("[Memory — past context]")
-                for entry in facts[-max_facts:]:
-                    lines_trimmed.append(f"  - {entry['fact']}")
-            text = "\n".join(lines_trimmed) if lines_trimmed else ""
-        if not text:
-            return None
 
-    return text
+    manual_lines: list[str] = []
+    if manual:
+        manual_lines.append("[Memory — manual notes]")
+        manual_lines.extend(f"  {ln}" for ln in manual.splitlines() if ln.strip())
+
+    display_facts = list(facts[-max_facts:]) if facts else []
+    fact_lines = [f"  - {entry['fact']}" for entry in display_facts]
+
+    def _assemble(kept_fact_lines: list[str]) -> str:
+        out = list(manual_lines)
+        if kept_fact_lines:
+            if out:
+                out.append("")
+            out.append("[Memory — past context]")
+            out.extend(kept_fact_lines)
+        return "\n".join(out)
+
+    full = _assemble(fact_lines)
+    if not full:
+        return None
+    if len(full) <= char_limit:
+        return full
+
+    # Over budget. Keep the largest suffix of (newest) facts that fits, using a
+    # running length so the final string is built exactly once (O(n), not the
+    # previous O(n^2) rebuild-per-drop loop). `fixed` is the cost of the manual
+    # block plus the past-context header, which is present iff >=1 fact is kept.
+    if manual_lines:
+        fixed = len("\n".join(manual_lines)) + len("\n\n[Memory — past context]")
+    else:
+        fixed = len("[Memory — past context]")
+
+    kept_rev: list[str] = []
+    length = fixed
+    for line in reversed(fact_lines):
+        add = 1 + len(line)  # a leading "\n" plus the line itself
+        if length + add > char_limit:
+            break
+        kept_rev.append(line)
+        length += add
+
+    text = _assemble(list(reversed(kept_rev)))
+    return text or None
 
 
 # ──────────────────────────────────────────────────────────────

@@ -58,6 +58,17 @@ class MemoryConfig:
     # capture 時に無視する最小文字数 (短すぎる応答はスキップ)
     min_capture_chars: int = 80
 
+    # consolidate 時の Ollama 呼び出しタイムアウト秒数。Ollama 未起動の環境で
+    # cron 実行する場合、これが長いと 1 回あたり最大この秒数ブロックする。
+    consolidate_timeout_s: int = 60
+
+    def __post_init__(self) -> None:
+        # 空文字 / 空白のみの project 名は project_dir() を state_dir 直下に
+        # 潰してしまい、複数プロジェクトの記憶が混ざる。安全側で "default" に
+        # フォールバックする。
+        if not (isinstance(self.project, str) and self.project.strip()):
+            self.project = "default"
+
     def project_dir(self) -> Path:
         """このプロジェクトの memory ディレクトリを返す。"""
         return Path(self.state_dir) / _safe_name(self.project)
@@ -82,6 +93,13 @@ def _resolve_project() -> str:
 
 
 def _safe_name(name: str) -> str:
-    """ディレクトリ名として安全な文字列に変換。"""
+    """ディレクトリ名として安全な文字列に変換。
+
+    正規化後に空文字となる入力 (例: "", "  ", "../..") でも、project_dir() が
+    state_dir 直下に潰れないよう "default" を返す。
+    """
     import re
-    return re.sub(r"[^\w\-]", "_", name)[:64]
+    cleaned = re.sub(r"[^\w\-]", "_", name)[:64]
+    # 全て "_" に潰れた場合 (例: "../..") はそのまま安全だが、空文字だけは
+    # ディレクトリ区切りとして無害化する必要がある。
+    return cleaned or "default"

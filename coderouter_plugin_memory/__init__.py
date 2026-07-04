@@ -16,7 +16,8 @@ Both are activated by adding ``memory`` to ``plugins.enabled`` in providers.yaml
 """
 from __future__ import annotations
 
-__version__ = "0.4.0"
-__all__ = ["MemoryPlugin"]
+__version__ = "0.4.1"
+__all__ = ["MemoryPlugin", "CircuitBreaker"]
 
+from coderouter_plugin_memory._circuit import CircuitBreaker
 from coderouter_plugin_memory.plugin import MemoryPlugin

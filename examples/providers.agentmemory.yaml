@@ -1,20 +1,13 @@
-# Recommended config — agentmemory backend.
+# agentmemory backend — DEFERRED to v0.5.
 #
-# Prerequisites:
-#   1. Run agentmemory in a separate terminal:
-#      $ npx -y @agentmemory/agentmemory
-#      (listens on http://localhost:3111 by default)
-#   2. Optionally export AGENTMEMORY_SECRET if you started agentmemory
-#      with auth enabled.
+# The external agentmemory / mem0 / null backends and their keys
+# (`backend:`, `endpoint:`, `secret_env:`, `circuit_breaker_*`, `search_limit:`)
+# were removed in v0.4.0. Passing any of them now is ignored with a warning
+# (see MemoryPlugin.__init__), so this file no longer wires agentmemory.
 #
-# What this gives you:
-#   - Hybrid BM25 + vector + graph search (R@5 95.2% on LongMemEval-S)
-#   - 4-tier memory consolidation (Working / Episodic / Semantic / Procedural)
-#   - Real-time viewer at http://localhost:3113 — watch the memory build
-#
-# Trade-off:
-#   - Needs another process running (Node + native iii-engine binary)
-#   - First-time setup takes a minute longer than builtin
+# It is kept as a placeholder for when a networked backend returns in v0.5. In
+# the meantime it uses the same v0.4.0 JSONL memory as providers.builtin.yaml,
+# so it still works if you copy it.
 
 providers:
   - name: ollama-local
@@ -31,17 +24,8 @@ plugins:
     - memory
   config:
     memory:
-      backend: agentmemory
-      endpoint: http://localhost:3111
+      consolidate_model: qwen3:1.7b
+      ollama_base_url: http://localhost:11434
       inject_token_budget: 2000
-      secret_env: AGENTMEMORY_SECRET   # auth header from env (optional)
-
-      # Circuit breaker — if agentmemory is down, skip after 5
-      # consecutive failures and probe again after 60s. Prevents
-      # 5s HTTP timeouts from stacking on every request.
-      circuit_breaker_threshold: 5
-      circuit_breaker_cooldown_s: 60.0
-
-      # Server-side cap on rows returned per search.  inject_token_budget
-      # above is the wire-side cap; this one keeps the response small.
-      search_limit: 20
+      min_buffer_entries: 3
+      max_inject_facts: 10
